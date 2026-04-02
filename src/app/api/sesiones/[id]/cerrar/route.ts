@@ -11,7 +11,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const auth = await requireRole(["bodeguero"]);
+  const auth = await requireRole(["dueno", "bodeguero"]);
   if (auth.error) return auth.error;
 
   const body = await request.json();

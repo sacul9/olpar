@@ -5,7 +5,7 @@ import { appendAuditLog } from "@/lib/audit";
 
 // POST — Call next in queue (FIFO strictly enforced)
 export async function POST() {
-  const auth = await requireRole(["bodeguero"]);
+  const auth = await requireRole(["dueno", "bodeguero"]);
   if (auth.error) return auth.error;
 
   // Check no one is currently being attended

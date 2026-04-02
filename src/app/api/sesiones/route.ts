@@ -6,7 +6,7 @@ import { appendAuditLog } from "@/lib/audit";
 
 // POST — Create a new return session (multi-product)
 export async function POST(request: NextRequest) {
-  const auth = await requireRole(["bodeguero"]);
+  const auth = await requireRole(["dueno", "bodeguero"]);
   if (auth.error) return auth.error;
 
   const body = await request.json();
