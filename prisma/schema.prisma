@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── USUARIOS DEL SISTEMA ──────────────────────────────
+
+model Usuario {
+  id      String @id @default(cuid())
+  authId  String @unique // Supabase Auth UUID
+  nombre  String
+  email   String @unique
+  rol     Rol
+  activo  Boolean  @default(true)
+  creadoEn DateTime @default(now())
+
+  sesiones  SesionDevolucion[]
+  auditLogs AuditLog[]
+
+  @@map("usuarios")
+}
+
+enum Rol {
+  dueno
+  gerente
+  bodeguero
+}
+
+// ─── CATALOGO DE PRODUCTOS ─────────────────────────────
+
+model Producto {
+  id              String   @id @default(cuid())
+  codigoBarras    String   @unique
+  nombre          String
+  marca           String   // alpina | zenu | bimbo | otro
+  categoria       String?
+  unidad          String   // und | caja | kg | litro
+  presentacion    String?  // "x6 900ml", "x12 150g"
+  unidadesPorCaja Int      @default(1)
+  refrigerado     Boolean  @default(false)
+  skuAmovil       String?
+  activo          Boolean  @default(true)
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  lineasDevolucion LineaDevolucion[]
+  itemsDetectados  ItemDetectado[]
+  inventario       Inventario?
+
+  @@map("productos")
+}
+
+// ─── CONDUCTORES ───────────────────────────────────────
+
+model Conductor {
+  id       String  @id @default(cuid())
+  cedula   String  @unique
+  nombre   String
+  placa    String?
+  telefono String?
+  ruta     String?
+  activo   Boolean @default(true)
+  creadoEn DateTime @default(now())
+
+  turnosCola ColaTurno[]
+  sesiones   SesionDevolucion[]
+  scores     ConductorScore[]
+
+  @@map("conductores")
+}
+
+// ─── COLA DE TURNOS (FIFO estricto) ────────────────────
+
+model ColaTurno {
+  id            String       @id @default(cuid())
+  conductorId   String
+  conductor     Conductor    @relation(fields: [conductorId], references: [id])
+  numeroTurno   Int
+  estado        EstadoTurno  @default(esperando)
+  fechaRegistro DateTime     @default(now())
+  fechaLlamado  DateTime?
+  fechaFin      DateTime?
+
+  sesion SesionDevolucion?
+
+  @@index([estado, fechaRegistro])
+  @@map("cola_turnos")
+}
+
+enum EstadoTurno {
+  esperando
+  en_atencion
+  completado
+  cancelado
+}
+
+// ─── SESIONES DE DEVOLUCION ────────────────────────────
+
+model SesionDevolucion {
+  id            String        @id @default(cuid())
+  turnoId       String        @unique
+  turno         ColaTurno     @relation(fields: [turnoId], references: [id])
+  conductorId   String
+  conductor     Conductor     @relation(fields: [conductorId], references: [id])
+  bodegueroId   String
+  bodeguero     Usuario       @relation(fields: [bodegueroId], references: [id])
+  tienda        String
+  estado        EstadoSesion  @default(abierta)
+  videoUrl      String?
+  videoSubidoEn DateTime?
+  camaraOffline Boolean       @default(false)
+  notas         String?
+  creadoEn      DateTime      @default(now())
+  cerradoEn     DateTime?
+
+  lineas          LineaDevolucion[]
+  itemsDetectados ItemDetectado[]
+  alertas         Alerta[]
+
+  @@index([estado])
+  @@index([conductorId])
+  @@map("sesiones_devolucion")
+}
+
+enum EstadoSesion {
+  abierta
+  cerrada
+  cancelada
+}
+
+// ─── LINEAS DE DEVOLUCION (multi-producto por sesion) ──
+
+model LineaDevolucion {
+  id                String           @id @default(cuid())
+  sesionId          String
+  sesion            SesionDevolucion @relation(fields: [sesionId], references: [id])
+  productoId        String
+  producto          Producto         @relation(fields: [productoId], references: [id])
+  motivo            MotivoDevolucion
+  cantidadDeclarada Int
+  cantidadDetectada Int              @default(0)
+  estadoProducto    EstadoProducto   @default(sin_verificar)
+  notas             String?
+  creadoEn          DateTime         @default(now())
+
+  @@unique([sesionId, productoId, motivo])
+  @@index([sesionId])
+  @@map("lineas_devolucion")
+}
+
+enum MotivoDevolucion {
+  vencido
+  averiado
+  cadena_frio
+  fecha_corta
+  sobrante
+  producto_equivocado
+  otro
+}
+
+enum EstadoProducto {
+  sin_verificar
+  bueno
+  vencido
+  daniado
+}
+
+// ─── ITEMS DETECTADOS POR LA CAMARA ────────────────────
+
+model ItemDetectado {
+  id              String           @id @default(cuid())
+  sesionId        String
+  sesion          SesionDevolucion @relation(fields: [sesionId], references: [id])
+  productoId      String?
+  producto        Producto?        @relation(fields: [productoId], references: [id])
+  codigoBarras    String
+  reconocido      Boolean          @default(false)
+  idempotencyKey  String           @unique // UUID from RPi — prevents double-counting
+  screenshotUrl   String?
+  confianza       Float?           // 0-100 for future YOLO integration
+  detectadoEn     DateTime         @default(now())
+
+  @@index([sesionId])
+  @@index([codigoBarras])
+  @@map("items_detectados")
+}
+
+// ─── INVENTARIO ────────────────────────────────────────
+
+model Inventario {
+  id                  String    @id @default(cuid())
+  productoId          String    @unique
+  producto            Producto  @relation(fields: [productoId], references: [id])
+  stockActual         Int       @default(0)
+  ultimaActualizacion DateTime  @updatedAt
+
+  movimientos MovimientoInventario[]
+
+  @@map("inventario")
+}
+
+model MovimientoInventario {
+  id           String     @id @default(cuid())
+  inventarioId String
+  inventario   Inventario @relation(fields: [inventarioId], references: [id])
+  tipo         String     // entrada_devolucion | salida_despacho | ajuste
+  cantidad     Int
+  referencia   String?    // session ID, order ID, etc.
+  creadoEn     DateTime   @default(now())
+
+  @@map("movimientos_inventario")
+}
+
+// ─── ALERTAS ───────────────────────────────────────────
+
+model Alerta {
+  id         String           @id @default(cuid())
+  sesionId   String
+  sesion     SesionDevolucion @relation(fields: [sesionId], references: [id])
+  tipo       TipoAlerta
+  mensaje    String
+  enviada    Boolean          @default(false)
+  enviadaEn  DateTime?
+  resueltaEn DateTime?
+  resueltaPor String?
+  creadoEn   DateTime         @default(now())
+
+  @@index([sesionId])
+  @@map("alertas")
+}
+
+enum TipoAlerta {
+  exceso_cantidad
+  producto_incorrecto
+  camara_offline
+  sesion_sin_video
+  conductor_flag
+}
+
+// ─── SCORE DE CONDUCTORES ──────────────────────────────
+
+model ConductorScore {
+  id                     String    @id @default(cuid())
+  conductorId            String
+  conductor              Conductor @relation(fields: [conductorId], references: [id])
+  semana                 String    // ISO week: "2026-W14"
+  totalSesiones          Int
+  sesionesConDiscrepancia Int
+  porcentajeExactitud    Float     @default(100)
+  flagGenerado           Boolean   @default(false)
+  creadoEn               DateTime  @default(now())
+
+  @@unique([conductorId, semana])
+  @@map("conductor_scores")
+}
+
+// ─── AUDIT LOG (append-only — NO UPDATE, NO DELETE) ────
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  usuarioId     String?
+  usuario       Usuario? @relation(fields: [usuarioId], references: [id])
+  accion        String
+  entidad       String
+  entidadId     String?
+  detalle       Json?
+  ip            String?
+  creadoEn      DateTime @default(now())
+
+  // NO @updatedAt — append-only by design
+
+  @@index([entidad, entidadId])
+  @@index([creadoEn])
+  @@map("audit_logs")
+}

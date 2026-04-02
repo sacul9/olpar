@@ -1,0 +1,32 @@
+"use client";
+
+import { QueuePanel } from "@/components/cola/queue-panel";
+import { SessionPanel } from "@/components/sesiones/session-panel";
+import { useRealtimeQueue } from "@/hooks/use-realtime-queue";
+import { useRealtimeSession } from "@/hooks/use-realtime-session";
+
+export default function DevolucionesPage() {
+  const queue = useRealtimeQueue();
+  const session = useRealtimeSession();
+
+  return (
+    <div className="flex h-full gap-6">
+      {/* Left panel: Queue + Session form */}
+      <div className="w-[40%] min-w-[360px] overflow-auto">
+        <QueuePanel
+          queue={queue}
+          hasSesionActiva={!!session.sesion}
+          onSesionCreada={session.refetch}
+        />
+      </div>
+
+      {/* Right panel: Realtime counter + detection feed */}
+      <div className="flex-1 overflow-auto">
+        <SessionPanel session={session} onCerrada={() => {
+          session.refetch();
+          queue.refetch();
+        }} />
+      </div>
+    </div>
+  );
+}
