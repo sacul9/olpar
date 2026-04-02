@@ -11,6 +11,7 @@ type Resumen = {
   ok: number;
   conDiscrepancia: number;
   abiertas: number;
+  valorEnRiesgo?: number;
 };
 
 type Score = {
@@ -75,8 +76,10 @@ export default function ReportesPage() {
             </CardValue>
           </Card>
           <Card>
-            <CardTitle>En Proceso</CardTitle>
-            <CardValue className="text-blue-600">{resumen.abiertas}</CardValue>
+            <CardTitle>Valor en Riesgo</CardTitle>
+            <CardValue className="text-red-600">
+              ${((resumen.valorEnRiesgo ?? 0) / 1000).toFixed(0)}K
+            </CardValue>
           </Card>
         </div>
       )}

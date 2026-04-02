@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { turnoId, tienda, lineas } = parsed.data;
+  const { turnoId, tienda, lineas, remisionId, estacionId } = parsed.data;
 
   // Verify turno exists and is en_atencion
   const turno = await prisma.colaTurno.findUnique({
@@ -74,6 +74,8 @@ export async function POST(request: NextRequest) {
         conductorId: turno.conductorId,
         bodegueroId: auth.user.id,
         tienda,
+        remisionId: remisionId ?? null,
+        estacionId: estacionId ?? null,
         estado: "abierta",
       },
     });

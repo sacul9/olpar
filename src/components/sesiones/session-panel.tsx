@@ -226,13 +226,19 @@ function CerrarSesionDialog({
   sesionId: string;
   lineas: Array<{
     id: string;
-    producto: { nombre: string };
+    producto: { nombre: string; refrigerado?: boolean };
     cantidadDeclarada: number;
     cantidadDetectada: number;
   }>;
   onCerrada: () => void;
 }) {
   const [estados, setEstados] = useState<Record<string, string>>({});
+  const [temperaturas, setTemperaturas] = useState<Record<string, string>>({});
+  const [rechazadas, setRechazadas] = useState<Record<string, boolean>>({});
+  const [firmaConductor, setFirmaConductor] = useState(false);
+  const [firmaBodeguero, setFirmaBodeguero] = useState(false);
+  const [rechazarTodo, setRechazarTodo] = useState(false);
+  const [motivoRechazo, setMotivoRechazo] = useState("");
   const [cerrando, setCerrando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -240,6 +246,7 @@ function CerrarSesionDialog({
     { value: "bueno", label: "Bueno" },
     { value: "vencido", label: "Vencido" },
     { value: "daniado", label: "Dañado" },
+    { value: "rechazado", label: "Rechazado" },
     { value: "sin_verificar", label: "Sin verificar" },
   ];
 
@@ -247,16 +254,37 @@ function CerrarSesionDialog({
     setCerrando(true);
     setError(null);
 
+    // Validate firma
+    if (!rechazarTodo && !firmaConductor) {
+      setError("La firma del conductor es obligatoria");
+      setCerrando(false);
+      return;
+    }
+
     try {
+      const body: Record<string, unknown> = rechazarTodo
+        ? {
+            rechazarSesion: true,
+            motivoRechazoSesion: motivoRechazo || "Devolucion rechazada en dock",
+            firmaConductor: firmaConductor ? `firma-conductor-${Date.now()}` : undefined,
+            firmaBodeguero: firmaBodeguero ? `firma-bodeguero-${Date.now()}` : undefined,
+          }
+        : {
+            lineas: lineas.map((l) => ({
+              lineaId: l.id,
+              estadoProducto: rechazadas[l.id] ? "rechazado" : (estados[l.id] ?? "sin_verificar"),
+              temperaturaRegistrada: temperaturas[l.id] ? parseFloat(temperaturas[l.id]) : undefined,
+              cadenaFrioOk: temperaturas[l.id] ? parseFloat(temperaturas[l.id]) <= 8 : undefined,
+              rechazada: rechazadas[l.id] ?? false,
+            })),
+            firmaConductor: firmaConductor ? `firma-conductor-${Date.now()}` : undefined,
+            firmaBodeguero: firmaBodeguero ? `firma-bodeguero-${Date.now()}` : undefined,
+          };
+
       const res = await fetch(`/api/sesiones/${sesionId}/cerrar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lineas: lineas.map((l) => ({
-            lineaId: l.id,
-            estadoProducto: estados[l.id] ?? "sin_verificar",
-          })),
-        }),
+        body: JSON.stringify(body),
       });
 
       if (res.ok) {
@@ -273,29 +301,106 @@ function CerrarSesionDialog({
 
   return (
     <Dialog open={open} onClose={onClose} title="Cerrar Sesion">
-      <div className="space-y-4">
-        <p className="text-sm text-gray-500">
-          Marque el estado de cada producto antes de cerrar:
-        </p>
-        {lineas.map((l) => (
-          <div key={l.id} className="flex items-center justify-between gap-3">
-            <div className="flex-1">
-              <p className="text-sm font-medium">{l.producto.nombre}</p>
-              <p className="text-xs text-gray-400">
-                {l.cantidadDetectada}/{l.cantidadDeclarada}
-              </p>
-            </div>
-            <div className="w-36">
-              <Select
-                options={estadoOptions}
-                value={estados[l.id] ?? "sin_verificar"}
-                onChange={(e) =>
-                  setEstados({ ...estados, [l.id]: e.target.value })
-                }
-              />
-            </div>
+      <div className="space-y-4 max-h-[70vh] overflow-auto">
+        {/* Reject entire session */}
+        <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-3">
+          <input
+            type="checkbox"
+            checked={rechazarTodo}
+            onChange={(e) => setRechazarTodo(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          <label className="text-sm font-medium text-red-700">
+            Rechazar toda la devolucion
+          </label>
+        </div>
+
+        {rechazarTodo ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Motivo del rechazo
+            </label>
+            <input
+              type="text"
+              value={motivoRechazo}
+              onChange={(e) => setMotivoRechazo(e.target.value)}
+              placeholder="Ej: Producto no corresponde a esta distribuidora"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
           </div>
-        ))}
+        ) : (
+          <>
+            <p className="text-sm text-gray-500">
+              Marque el estado de cada producto:
+            </p>
+            {lineas.map((l) => (
+              <div key={l.id} className="rounded-md border p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">{l.producto.nombre}</p>
+                    <p className="text-xs text-gray-400">
+                      {l.cantidadDetectada}/{l.cantidadDeclarada}
+                    </p>
+                  </div>
+                  <div className="w-32">
+                    <Select
+                      options={estadoOptions}
+                      value={rechazadas[l.id] ? "rechazado" : (estados[l.id] ?? "sin_verificar")}
+                      onChange={(e) => {
+                        if (e.target.value === "rechazado") {
+                          setRechazadas({ ...rechazadas, [l.id]: true });
+                        } else {
+                          setRechazadas({ ...rechazadas, [l.id]: false });
+                          setEstados({ ...estados, [l.id]: e.target.value });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                {/* Temperature input for refrigerated products */}
+                {l.producto.refrigerado && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-blue-600">Temp:</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="°C"
+                      value={temperaturas[l.id] ?? ""}
+                      onChange={(e) =>
+                        setTemperaturas({ ...temperaturas, [l.id]: e.target.value })
+                      }
+                      className="w-20 rounded border border-gray-300 px-2 py-1 text-xs"
+                    />
+                    <span className="text-xs text-gray-400">°C</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* Firma digital */}
+        <div className="border-t pt-3 space-y-2">
+          <p className="text-xs font-medium text-gray-500 uppercase">Firmas</p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={firmaConductor}
+              onChange={(e) => setFirmaConductor(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            Conductor acepta y firma
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={firmaBodeguero}
+              onChange={(e) => setFirmaBodeguero(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            Bodeguero confirma y firma
+          </label>
+        </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -303,8 +408,13 @@ function CerrarSesionDialog({
           <Button variant="ghost" onClick={onClose} className="flex-1">
             Cancelar
           </Button>
-          <Button onClick={cerrar} loading={cerrando} className="flex-1">
-            Cerrar Sesion
+          <Button
+            onClick={cerrar}
+            loading={cerrando}
+            variant={rechazarTodo ? "danger" : "primary"}
+            className="flex-1"
+          >
+            {rechazarTodo ? "Rechazar Devolucion" : "Cerrar Sesion"}
           </Button>
         </div>
       </div>

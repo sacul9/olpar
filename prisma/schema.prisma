@@ -18,8 +18,9 @@ model Usuario {
   activo  Boolean  @default(true)
   creadoEn DateTime @default(now())
 
-  sesiones  SesionDevolucion[]
-  auditLogs AuditLog[]
+  sesiones    SesionDevolucion[]
+  auditLogs   AuditLog[]
+  notasCredito NotaCredito[] @relation("notaCreditoCreadaPor")
 
   @@map("usuarios")
 }
@@ -28,6 +29,7 @@ enum Rol {
   dueno
   gerente
   bodeguero
+  proveedor // P3: Portal proveedor read-only
 }
 
 // ─── CATALOGO DE PRODUCTOS ─────────────────────────────
@@ -43,6 +45,13 @@ model Producto {
   unidadesPorCaja Int      @default(1)
   refrigerado     Boolean  @default(false)
   skuAmovil       String?
+  // P1: Precios para KPIs financieros
+  precioCosto     Float    @default(0)
+  precioVenta     Float    @default(0)
+  // P1: Politica de devolucion por producto
+  diasMaxDevolucion Int    @default(7) // dias despues del vencimiento
+  temperaturaMaxima Float? // P1: temp maxima aceptable en grados C (null = no aplica)
+  pesoUnidad        Float? // P2: peso en kg por unidad (para validacion por peso)
   activo          Boolean  @default(true)
   creadoEn        DateTime @default(now())
   actualizadoEn   DateTime @updatedAt
@@ -63,6 +72,7 @@ model Conductor {
   placa    String?
   telefono String?
   ruta     String?
+  email    String? // P1: para notificacion de discrepancias
   activo   Boolean @default(true)
   creadoEn DateTime @default(now())
 
@@ -71,6 +81,21 @@ model Conductor {
   scores     ConductorScore[]
 
   @@map("conductores")
+}
+
+// ─── ESTACIONES DE DEVOLUCION (P3: multi-estacion) ─────
+
+model Estacion {
+  id        String  @id @default(cuid())
+  nombre    String  // "Estacion 1", "Estacion Frio"
+  tipo      String  @default("general") // general | refrigerado
+  activa    Boolean @default(true)
+  rpiApiKey String? // API key unica por estacion
+  creadoEn  DateTime @default(now())
+
+  sesiones SesionDevolucion[]
+
+  @@map("estaciones")
 }
 
 // ─── COLA DE TURNOS (FIFO estricto) ────────────────────
@@ -108,27 +133,43 @@ model SesionDevolucion {
   conductor     Conductor     @relation(fields: [conductorId], references: [id])
   bodegueroId   String
   bodeguero     Usuario       @relation(fields: [bodegueroId], references: [id])
+  // P3: Multi-estacion
+  estacionId    String?
+  estacion      Estacion?     @relation(fields: [estacionId], references: [id])
   tienda        String
+  // P2: Referencia a orden de despacho
+  remisionId    String?       // ID de la remision/orden de despacho original
+  remisionFecha DateTime?     // Fecha de la remision
   estado        EstadoSesion  @default(abierta)
   videoUrl      String?
   videoSubidoEn DateTime?
   camaraOffline Boolean       @default(false)
   notas         String?
+  // P2: Firma digital
+  firmaConductor   String?    // base64 de la firma del conductor
+  firmaBodeguero   String?    // base64 de la firma del bodeguero
+  firmaTimestamp   DateTime?  // cuando se firmaron
+  // P1: Valor monetario total
+  valorTotalDeclarado Float   @default(0)
+  valorTotalDetectado Float   @default(0)
   creadoEn      DateTime      @default(now())
   cerradoEn     DateTime?
 
   lineas          LineaDevolucion[]
   itemsDetectados ItemDetectado[]
   alertas         Alerta[]
+  notaCredito     NotaCredito?
 
   @@index([estado])
   @@index([conductorId])
+  @@index([remisionId])
   @@map("sesiones_devolucion")
 }
 
 enum EstadoSesion {
   abierta
   cerrada
+  rechazada  // P1: devolucion rechazada en dock
   cancelada
 }
 
@@ -144,6 +185,15 @@ model LineaDevolucion {
   cantidadDeclarada Int
   cantidadDetectada Int              @default(0)
   estadoProducto    EstadoProducto   @default(sin_verificar)
+  // P1: Temperatura al recibir
+  temperaturaRegistrada Float?       // grados C medidos al recibir
+  cadenaFrioOk          Boolean?     // null=no verificada, true=ok, false=rota
+  // P1: Valor monetario por linea
+  valorUnitario     Float            @default(0) // costo unitario al momento
+  valorTotalLinea   Float            @default(0) // cantidadDetectada * valorUnitario
+  // P1: Rechazo
+  rechazada         Boolean          @default(false)
+  motivoRechazo     String?          // motivo del rechazo
   notas             String?
   creadoEn          DateTime         @default(now())
 
@@ -167,6 +217,7 @@ enum EstadoProducto {
   bueno
   vencido
   daniado
+  rechazado // P1: producto rechazado
 }
 
 // ─── ITEMS DETECTADOS POR LA CAMARA ────────────────────
@@ -179,14 +230,48 @@ model ItemDetectado {
   producto        Producto?        @relation(fields: [productoId], references: [id])
   codigoBarras    String
   reconocido      Boolean          @default(false)
-  idempotencyKey  String           @unique // UUID from RPi — prevents double-counting
+  idempotencyKey  String           @unique
   screenshotUrl   String?
-  confianza       Float?           // 0-100 for future YOLO integration
+  confianza       Float?
   detectadoEn     DateTime         @default(now())
 
   @@index([sesionId])
   @@index([codigoBarras])
   @@map("items_detectados")
+}
+
+// ─── NOTA CREDITO (P2) ─────────────────────────────────
+
+model NotaCredito {
+  id              String           @id @default(cuid())
+  sesionId        String           @unique
+  sesion          SesionDevolucion @relation(fields: [sesionId], references: [id])
+  numero          String           @unique // NC-2026-0001
+  tienda          String
+  conductorNombre String
+  // Detalle financiero
+  subtotal        Float
+  impuesto        Float            @default(0)
+  total           Float
+  estado          EstadoNotaCredito @default(borrador)
+  // Detalle por linea (JSON snapshot)
+  detalle         Json             // [{producto, cantidad, valorUnitario, subtotal}]
+  // Metadata
+  creadaPorId     String
+  creadaPor       Usuario          @relation("notaCreditoCreadaPor", fields: [creadaPorId], references: [id])
+  aprobadaEn      DateTime?
+  creadoEn        DateTime         @default(now())
+
+  @@index([estado])
+  @@index([tienda])
+  @@map("notas_credito")
+}
+
+enum EstadoNotaCredito {
+  borrador
+  aprobada
+  enviada
+  anulada
 }
 
 // ─── INVENTARIO ────────────────────────────────────────
@@ -209,7 +294,7 @@ model MovimientoInventario {
   inventario   Inventario @relation(fields: [inventarioId], references: [id])
   tipo         String     // entrada_devolucion | salida_despacho | ajuste
   cantidad     Int
-  referencia   String?    // session ID, order ID, etc.
+  referencia   String?
   creadoEn     DateTime   @default(now())
 
   @@map("movimientos_inventario")
@@ -239,6 +324,9 @@ enum TipoAlerta {
   camara_offline
   sesion_sin_video
   conductor_flag
+  cadena_frio_rota    // P1
+  devolucion_rechazada // P1
+  sla_espera          // P1: conductor esperando demasiado
 }
 
 // ─── SCORE DE CONDUCTORES ──────────────────────────────
@@ -247,15 +335,27 @@ model ConductorScore {
   id                     String    @id @default(cuid())
   conductorId            String
   conductor              Conductor @relation(fields: [conductorId], references: [id])
-  semana                 String    // ISO week: "2026-W14"
+  semana                 String
   totalSesiones          Int
   sesionesConDiscrepancia Int
   porcentajeExactitud    Float     @default(100)
+  valorEnRiesgo          Float     @default(0) // P1: valor monetario en discrepancia
   flagGenerado           Boolean   @default(false)
   creadoEn               DateTime  @default(now())
 
   @@unique([conductorId, semana])
   @@map("conductor_scores")
+}
+
+// ─── RATE LIMITING (P0) ────────────────────────────────
+
+model RateLimit {
+  id         String   @id @default(cuid())
+  key        String   @unique // "scanner:{api_key}" or "ip:{ip}"
+  tokens     Int      @default(60)
+  lastRefill DateTime @default(now())
+
+  @@map("rate_limits")
 }
 
 // ─── AUDIT LOG (append-only — NO UPDATE, NO DELETE) ────
@@ -270,8 +370,6 @@ model AuditLog {
   detalle       Json?
   ip            String?
   creadoEn      DateTime @default(now())
-
-  // NO @updatedAt — append-only by design
 
   @@index([entidad, entidadId])
   @@index([creadoEn])

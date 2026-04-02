@@ -32,6 +32,7 @@ export function NuevaSesionForm({
   const [tienda, setTienda] = useState("");
   const [lineas, setLineas] = useState<LineaInput[]>([]);
   const [creando, setCreando] = useState(false);
+  const [remisionId, setRemisionId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   // Product search state
@@ -98,6 +99,7 @@ export function NuevaSesionForm({
         body: JSON.stringify({
           turnoId,
           tienda,
+          remisionId: remisionId || undefined,
           lineas: lineas.map((l) => ({
             productoId: l.productoId,
             motivo: l.motivo,
@@ -130,6 +132,14 @@ export function NuevaSesionForm({
         placeholder="Nombre de la tienda"
         value={tienda}
         onChange={(e) => setTienda(e.target.value)}
+      />
+
+      <Input
+        id="remision"
+        label="Remision / Orden de despacho (opcional)"
+        placeholder="Ej: REM-2026-0451"
+        value={remisionId}
+        onChange={(e) => setRemisionId(e.target.value)}
       />
 
       {/* Product search + add line */}

@@ -26,6 +26,9 @@ export const LineaDevolucionInput = z.object({
 export const CrearSesionSchema = z.object({
   turnoId: z.string().min(1),
   tienda: z.string().min(1),
+  remisionId: z.string().optional(), // P2: referencia a despacho
+  remisionFecha: z.string().optional(),
+  estacionId: z.string().optional(), // P3: multi-estacion
   lineas: z.array(LineaDevolucionInput).min(1),
 });
 
@@ -34,11 +37,21 @@ export const CerrarSesionSchema = z.object({
     .array(
       z.object({
         lineaId: z.string().min(1),
-        estadoProducto: z.enum(["bueno", "vencido", "daniado", "sin_verificar"]),
+        estadoProducto: z.enum(["bueno", "vencido", "daniado", "sin_verificar", "rechazado"]),
+        temperaturaRegistrada: z.number().optional(), // P1: temperatura
+        cadenaFrioOk: z.boolean().optional(),
+        rechazada: z.boolean().optional(), // P1: rechazo
+        motivoRechazo: z.string().optional(),
       })
     )
     .optional(),
   notas: z.string().optional(),
+  // P2: Firma digital
+  firmaConductor: z.string().optional(), // base64
+  firmaBodeguero: z.string().optional(),
+  // P1: Rechazo de toda la sesion
+  rechazarSesion: z.boolean().optional(),
+  motivoRechazoSesion: z.string().optional(),
 });
 
 // ─── Scanner ───────────────────────────────────────────
@@ -67,6 +80,11 @@ export const CrearProductoSchema = z.object({
   unidadesPorCaja: z.number().int().positive().default(1),
   refrigerado: z.boolean().default(false),
   skuAmovil: z.string().optional(),
+  precioCosto: z.number().min(0).optional(),
+  precioVenta: z.number().min(0).optional(),
+  temperaturaMaxima: z.number().optional(),
+  diasMaxDevolucion: z.number().int().positive().optional(),
+  pesoUnidad: z.number().positive().optional(),
 });
 
 // ─── Type Exports ──────────────────────────────────────

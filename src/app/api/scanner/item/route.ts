@@ -5,11 +5,22 @@ import { isUniqueConstraintError } from "@/lib/scanner/idempotency";
 import { appendAuditLog } from "@/lib/audit";
 import { ScannerItemSchema } from "@/types/api";
 import { enviarAlerta } from "@/lib/alertas/n8n-webhook";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   // 1. Verify RPi API key
   const authError = requireApiKey(request);
   if (authError) return authError;
+
+  // 1b. Rate limiting
+  const apiKey = request.headers.get("x-api-key") ?? "unknown";
+  const allowed = await checkRateLimit(`scanner:${apiKey}`);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Rate limit excedido. Maximo 120 requests/minuto." },
+      { status: 429 }
+    );
+  }
 
   // 2. Parse and validate body
   const body = await request.json();

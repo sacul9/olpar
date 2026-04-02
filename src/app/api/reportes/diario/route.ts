@@ -42,6 +42,13 @@ export async function GET(request: NextRequest) {
     (s) => s.estado === "abierta"
   ).length;
 
+  // P1: Financial KPIs
+  const valorEnRiesgo = sesiones
+    .filter((s) => s.estado === "cerrada")
+    .reduce((sum, s) => {
+      return sum + Math.abs(s.valorTotalDetectado - s.valorTotalDeclarado);
+    }, 0);
+
   return NextResponse.json({
     fecha,
     resumen: {
@@ -49,6 +56,7 @@ export async function GET(request: NextRequest) {
       ok: sesionesOk,
       conDiscrepancia: sesionesConDiscrepancia,
       abiertas: sesionesAbiertas,
+      valorEnRiesgo,
     },
     sesiones,
   });
