@@ -45,6 +45,7 @@ model Producto {
   unidadesPorCaja Int      @default(1)
   refrigerado     Boolean  @default(false)
   skuAmovil       String?
+  imagenUrl       String?  // URL de la imagen del producto
   // P1: Precios para KPIs financieros
   precioCosto     Float    @default(0)
   precioVenta     Float    @default(0)

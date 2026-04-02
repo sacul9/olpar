@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
-import { MOTIVOS_DEVOLUCION } from "@/lib/constants";
+import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 
 type SessionHook = {
   sesion: {
@@ -19,7 +19,7 @@ type SessionHook = {
     conductor: { nombre: string; cedula: string; ruta: string | null };
     lineas: Array<{
       id: string;
-      producto: { nombre: string; codigoBarras: string };
+      producto: { nombre: string; codigoBarras: string; imagenUrl?: string | null; refrigerado?: boolean };
       motivo: string;
       cantidadDeclarada: number;
       cantidadDetectada: number;
@@ -40,6 +40,17 @@ type SessionHook = {
   refetch: () => void;
 };
 
+type ScanResult = {
+  productoNombre: string | null;
+  productoImagen: string | null;
+  productoRefrigerado: boolean;
+  cantidadDetectada: number;
+  cantidadDeclarada: number | null;
+  exceso: boolean;
+  reconocido: boolean;
+  noDeclarado: boolean;
+};
+
 export function SessionPanel({
   session,
   onCerrada,
@@ -48,6 +59,59 @@ export function SessionPanel({
   onCerrada: () => void;
 }) {
   const [showCerrar, setShowCerrar] = useState(false);
+  const [lastScan, setLastScan] = useState<ScanResult | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  const handleBarcodeScan = useCallback(
+    async (barcode: string) => {
+      if (!session.sesion || scanning) return;
+
+      setScanning(true);
+      setScanError(null);
+
+      try {
+        const res = await fetch("/api/scanner/scan-from-ui", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            codigoBarras: barcode,
+            sesionId: session.sesion.id,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          setScanError(data.error);
+          // Play error sound
+          playSound("error");
+          return;
+        }
+
+        setLastScan(data);
+        session.refetch();
+
+        // Play sound
+        if (data.exceso) {
+          playSound("alert");
+        } else if (data.reconocido) {
+          playSound("beep");
+        } else {
+          playSound("unknown");
+        }
+      } catch {
+        setScanError("Error de conexion");
+        playSound("error");
+      } finally {
+        setScanning(false);
+      }
+    },
+    [session, scanning]
+  );
+
+  // Listen for USB barcode scanner keystrokes
+  useBarcodeScanner(handleBarcodeScan, !!session.sesion && !showCerrar);
 
   if (!session.sesion) {
     return (
@@ -57,6 +121,9 @@ export function SessionPanel({
           <p className="mt-4 text-sm text-gray-400">
             No hay sesion activa. Llame al siguiente conductor.
           </p>
+          <p className="mt-2 text-xs text-gray-300">
+            La pistola de barcode esta lista para escanear
+          </p>
         </div>
       </Card>
     );
@@ -65,63 +132,133 @@ export function SessionPanel({
   const s = session.sesion;
   const videoListo = !!s.videoUrl;
   const puedesCerrar = videoListo || s.camaraOffline;
+  const totalProgress =
+    session.totalDeclarado > 0
+      ? Math.min((session.totalDetectado / session.totalDeclarado) * 100, 100)
+      : 0;
 
   return (
     <div className="space-y-4">
-      {/* Big counter */}
+      {/* Header + scan status */}
       <Card>
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-sm text-gray-500">
-              {s.conductor.nombre} — {s.tienda}
-            </p>
+            <p className="font-semibold text-gray-900">{s.conductor.nombre}</p>
+            <p className="text-sm text-gray-500">{s.tienda}</p>
             <p className="text-xs text-gray-400">{s.conductor.ruta}</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Camera status indicator */}
             <span
               className={`inline-block h-3 w-3 rounded-full ${
                 s.camaraOffline ? "bg-red-500" : "bg-green-500"
               }`}
-              title={s.camaraOffline ? "Camara offline" : "Camara activa"}
             />
-            {videoListo && <Badge color="green">Video listo</Badge>}
+            {videoListo && <Badge color="green">Video</Badge>}
+            <Badge color="blue">Pistola activa</Badge>
           </div>
         </div>
 
-        <div className="mt-4 sm:mt-6 text-center">
+        {/* LAST SCAN: big product display */}
+        {lastScan && lastScan.reconocido ? (
           <div
-            className={`inline-block w-full max-w-md rounded-2xl px-6 sm:px-12 py-6 sm:py-8 ${
-              session.hayExceso
-                ? "animate-pulse bg-red-50 ring-2 ring-red-500"
-                : "bg-gray-50"
+            className={`mt-4 flex items-center gap-4 rounded-xl p-4 ${
+              lastScan.exceso
+                ? "bg-red-50 ring-2 ring-red-500 animate-pulse"
+                : lastScan.noDeclarado
+                ? "bg-yellow-50 ring-2 ring-yellow-400"
+                : "bg-green-50"
             }`}
           >
-            <p className="text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wide">
-              Declarado vs Detectado
+            {lastScan.productoImagen && (
+              <img
+                src={lastScan.productoImagen}
+                alt={lastScan.productoNombre ?? ""}
+                className="h-20 w-20 rounded-lg object-contain bg-white"
+              />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-lg font-bold truncate">
+                {lastScan.productoNombre}
+              </p>
+              {lastScan.cantidadDeclarada != null ? (
+                <p
+                  className={`text-3xl font-bold tabular-nums ${
+                    lastScan.exceso ? "text-red-600" : "text-green-600"
+                  }`}
+                >
+                  {lastScan.cantidadDetectada} / {lastScan.cantidadDeclarada}
+                </p>
+              ) : (
+                <p className="text-sm text-yellow-600 font-medium">
+                  Producto NO declarado en esta sesion
+                </p>
+              )}
+              {lastScan.exceso && (
+                <p className="text-sm font-bold text-red-600 uppercase mt-1">
+                  EXCESO DETECTADO — ALERTA ENVIADA
+                </p>
+              )}
+            </div>
+          </div>
+        ) : lastScan && !lastScan.reconocido ? (
+          <div className="mt-4 rounded-xl bg-yellow-50 p-4 ring-2 ring-yellow-400">
+            <p className="text-lg font-bold text-yellow-700">
+              Producto NO reconocido
             </p>
-            <p
-              className={`text-5xl sm:text-7xl font-bold tabular-nums ${
-                session.hayExceso
-                  ? "text-red-600"
-                  : session.totalDetectado === session.totalDeclarado && session.totalDetectado > 0
-                  ? "text-green-600"
-                  : "text-gray-900"
+            <p className="text-sm text-yellow-600">
+              Este codigo de barras no existe en el catalogo
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl bg-gray-50 p-6 text-center">
+            <p className="text-4xl text-gray-300">📦</p>
+            <p className="mt-2 text-sm text-gray-400">
+              {scanning ? "Procesando..." : "Esperando escaneo con pistola..."}
+            </p>
+            <p className="text-xs text-gray-300 mt-1">
+              Dispare la pistola al codigo de barras del producto
+            </p>
+          </div>
+        )}
+
+        {scanError && (
+          <p className="mt-2 text-sm text-red-600 bg-red-50 rounded p-2">
+            {scanError}
+          </p>
+        )}
+
+        {/* Total progress bar */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-sm mb-1">
+            <span className="text-gray-500">Progreso total</span>
+            <span
+              className={`font-bold tabular-nums ${
+                session.hayExceso ? "text-red-600" : "text-gray-900"
               }`}
             >
-              {session.totalDeclarado}{" "}
-              <span className="text-3xl sm:text-4xl text-gray-400">vs</span>{" "}
-              {session.totalDetectado}
-            </p>
-            {session.hayExceso && (
-              <p className="mt-2 text-xs sm:text-sm font-semibold text-red-600 uppercase">
-                EXCESO DETECTADO
-              </p>
-            )}
+              {session.totalDetectado} / {session.totalDeclarado}
+            </span>
           </div>
+          <div className="h-3 rounded-full bg-gray-200 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                session.hayExceso
+                  ? "bg-red-500"
+                  : totalProgress >= 100
+                  ? "bg-green-500"
+                  : "bg-blue-500"
+              }`}
+              style={{ width: `${Math.min(totalProgress, 100)}%` }}
+            />
+          </div>
+          {session.hayExceso && (
+            <p className="text-xs text-red-600 font-semibold mt-1">
+              EXCESO: {session.totalDetectado - session.totalDeclarado} unidades de mas
+            </p>
+          )}
         </div>
 
-        <div className="mt-6 flex justify-center">
+        <div className="mt-4 flex justify-end">
           <Button
             size="lg"
             variant={puedesCerrar ? "primary" : "secondary"}
@@ -133,28 +270,37 @@ export function SessionPanel({
         </div>
       </Card>
 
-      {/* Per-product lines */}
+      {/* Per-product detail with progress bars */}
       <Card>
         <CardTitle>Detalle por Producto</CardTitle>
         <div className="mt-4 space-y-3">
           {s.lineas.map((linea) => {
+            const pct =
+              linea.cantidadDeclarada > 0
+                ? (linea.cantidadDetectada / linea.cantidadDeclarada) * 100
+                : 0;
             const match = linea.cantidadDetectada === linea.cantidadDeclarada;
             const exceso = linea.cantidadDetectada > linea.cantidadDeclarada;
 
             return (
               <div
                 key={linea.id}
-                className={`flex items-center justify-between rounded-md border p-3 ${
-                  exceso ? "border-red-300 bg-red-50" : match ? "border-green-200 bg-green-50" : ""
+                className={`rounded-lg border p-3 ${
+                  exceso ? "border-red-300 bg-red-50" : match && linea.cantidadDetectada > 0 ? "border-green-200 bg-green-50" : ""
                 }`}
               >
-                <div>
-                  <p className="text-sm font-medium">{linea.producto.nombre}</p>
-                  <p className="text-xs text-gray-400">
-                    {MOTIVOS_DEVOLUCION.find((m) => m.value === linea.motivo)?.label}
-                  </p>
-                </div>
-                <div className="text-right">
+                <div className="flex items-center gap-3">
+                  {linea.producto.imagenUrl && (
+                    <img
+                      src={linea.producto.imagenUrl}
+                      alt={linea.producto.nombre}
+                      className="h-10 w-10 rounded object-contain bg-white"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{linea.producto.nombre}</p>
+                    <p className="text-xs text-gray-400">{linea.motivo}</p>
+                  </div>
                   <p
                     className={`text-lg font-bold tabular-nums ${
                       exceso ? "text-red-600" : match && linea.cantidadDetectada > 0 ? "text-green-600" : "text-gray-900"
@@ -163,18 +309,27 @@ export function SessionPanel({
                     {linea.cantidadDetectada} / {linea.cantidadDeclarada}
                   </p>
                 </div>
+                {/* Progress bar per product */}
+                <div className="mt-2 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      exceso ? "bg-red-500" : match ? "bg-green-500" : "bg-blue-400"
+                    }`}
+                    style={{ width: `${Math.min(pct, 100)}%` }}
+                  />
+                </div>
               </div>
             );
           })}
         </div>
       </Card>
 
-      {/* Recent detections feed */}
+      {/* Recent scans feed */}
       <Card>
-        <CardTitle>Ultimas Detecciones</CardTitle>
-        <div className="mt-3 max-h-60 overflow-auto">
+        <CardTitle>Ultimos Escaneos</CardTitle>
+        <div className="mt-3 max-h-48 overflow-auto">
           {s.itemsDetectados.length === 0 ? (
-            <p className="text-sm text-gray-400">Esperando escaneos...</p>
+            <p className="text-sm text-gray-400">Dispare la pistola al primer producto...</p>
           ) : (
             <ul className="space-y-1">
               {s.itemsDetectados.map((item) => (
@@ -213,6 +368,39 @@ export function SessionPanel({
     </div>
   );
 }
+
+function playSound(type: "beep" | "error" | "alert" | "unknown") {
+  // Use Web Audio API for instant feedback
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.value = 0.1;
+
+    if (type === "beep") {
+      osc.frequency.value = 800;
+      osc.type = "sine";
+    } else if (type === "error") {
+      osc.frequency.value = 200;
+      osc.type = "square";
+    } else if (type === "alert") {
+      osc.frequency.value = 400;
+      osc.type = "sawtooth";
+    } else {
+      osc.frequency.value = 500;
+      osc.type = "triangle";
+    }
+
+    osc.start();
+    osc.stop(ctx.currentTime + (type === "alert" ? 0.4 : 0.15));
+  } catch {
+    // Audio not available
+  }
+}
+
+// ─── Close Dialog (same as before) ─────────────────────
 
 function CerrarSesionDialog({
   open,
@@ -254,7 +442,6 @@ function CerrarSesionDialog({
     setCerrando(true);
     setError(null);
 
-    // Validate firma
     if (!rechazarTodo && !firmaConductor) {
       setError("La firma del conductor es obligatoria");
       setCerrando(false);
@@ -265,7 +452,7 @@ function CerrarSesionDialog({
       const body: Record<string, unknown> = rechazarTodo
         ? {
             rechazarSesion: true,
-            motivoRechazoSesion: motivoRechazo || "Devolucion rechazada en dock",
+            motivoRechazoSesion: motivoRechazo || "Devolucion rechazada",
             firmaConductor: firmaConductor ? `firma-conductor-${Date.now()}` : undefined,
             firmaBodeguero: firmaBodeguero ? `firma-bodeguero-${Date.now()}` : undefined,
           }
@@ -302,7 +489,6 @@ function CerrarSesionDialog({
   return (
     <Dialog open={open} onClose={onClose} title="Cerrar Sesion">
       <div className="space-y-4 max-h-[70vh] overflow-auto">
-        {/* Reject entire session */}
         <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-3">
           <input
             type="checkbox"
@@ -330,9 +516,7 @@ function CerrarSesionDialog({
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-500">
-              Marque el estado de cada producto:
-            </p>
+            <p className="text-sm text-gray-500">Estado de cada producto:</p>
             {lineas.map((l) => (
               <div key={l.id} className="rounded-md border p-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -357,7 +541,6 @@ function CerrarSesionDialog({
                     />
                   </div>
                 </div>
-                {/* Temperature input for refrigerated products */}
                 {l.producto.refrigerado && (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-blue-600">Temp:</span>
@@ -379,7 +562,6 @@ function CerrarSesionDialog({
           </>
         )}
 
-        {/* Firma digital */}
         <div className="border-t pt-3 space-y-2">
           <p className="text-xs font-medium text-gray-500 uppercase">Firmas</p>
           <label className="flex items-center gap-2 text-sm">
