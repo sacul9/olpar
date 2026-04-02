@@ -22,12 +22,10 @@ type Producto = {
 
 export function NuevaSesionForm({
   turnoId,
-  conductorNombre,
   onCreada,
   onCancelar,
 }: {
   turnoId: string;
-  conductorNombre: string;
   onCreada: () => void;
   onCancelar: () => void;
 }) {

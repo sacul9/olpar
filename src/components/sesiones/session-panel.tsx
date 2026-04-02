@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardTitle, CardValue } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";

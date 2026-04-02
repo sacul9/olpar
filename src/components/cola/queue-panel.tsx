@@ -67,7 +67,6 @@ export function QueuePanel({
         </p>
         <NuevaSesionForm
           turnoId={queue.enAtencion.id}
-          conductorNombre={queue.enAtencion.conductor.nombre}
           onCreada={() => {
             setMostrarFormulario(false);
             onSesionCreada();

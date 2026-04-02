@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useCallback } from "react";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,11 +31,7 @@ export default function HistorialPage() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchHistorial();
-  }, [fecha]);
-
-  async function fetchHistorial() {
+  const fetchHistorial = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/reportes/diario?fecha=${fecha}`);
@@ -46,7 +42,11 @@ export default function HistorialPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [fecha]);
+
+  useEffect(() => {
+    fetchHistorial();
+  }, [fetchHistorial]);
 
   function getEstadoBadge(sesion: Sesion) {
     const hayDiscrepancia = sesion.lineas.some(
