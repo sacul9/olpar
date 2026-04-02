@@ -45,8 +45,8 @@ export default function ReportesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Reportes</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Reportes</h1>
         <Button
           variant="secondary"
           onClick={() => {
@@ -59,7 +59,7 @@ export default function ReportesPage() {
 
       {/* Daily summary cards */}
       {resumen && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <Card>
             <CardTitle>Total Hoy</CardTitle>
             <CardValue className="text-gray-900">{resumen.total}</CardValue>
@@ -94,8 +94,8 @@ export default function ReportesPage() {
             No hay scores calculados aun. Se calculan cada lunes.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="-mx-6 overflow-x-auto px-6">
+            <table className="w-full min-w-[700px] text-sm">
               <thead>
                 <tr className="border-b text-left text-gray-500">
                   <th className="pb-3 pr-4 font-medium">Conductor</th>

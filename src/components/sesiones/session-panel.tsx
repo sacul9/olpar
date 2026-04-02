@@ -51,10 +51,10 @@ export function SessionPanel({
 
   if (!session.sesion) {
     return (
-      <Card className="flex h-full items-center justify-center">
+      <Card className="flex min-h-[300px] lg:h-full items-center justify-center">
         <div className="text-center">
-          <p className="text-6xl text-gray-200 font-bold">0 / 0</p>
-          <p className="mt-4 text-gray-400">
+          <p className="text-5xl sm:text-6xl text-gray-200 font-bold">0 / 0</p>
+          <p className="mt-4 text-sm text-gray-400">
             No hay sesion activa. Llame al siguiente conductor.
           </p>
         </div>
@@ -89,19 +89,19 @@ export function SessionPanel({
           </div>
         </div>
 
-        <div className="mt-6 text-center">
+        <div className="mt-4 sm:mt-6 text-center">
           <div
-            className={`inline-block rounded-2xl px-12 py-8 ${
+            className={`inline-block w-full max-w-md rounded-2xl px-6 sm:px-12 py-6 sm:py-8 ${
               session.hayExceso
                 ? "animate-pulse bg-red-50 ring-2 ring-red-500"
                 : "bg-gray-50"
             }`}
           >
-            <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+            <p className="text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wide">
               Declarado vs Detectado
             </p>
             <p
-              className={`text-7xl font-bold tabular-nums ${
+              className={`text-5xl sm:text-7xl font-bold tabular-nums ${
                 session.hayExceso
                   ? "text-red-600"
                   : session.totalDetectado === session.totalDeclarado && session.totalDetectado > 0
@@ -110,11 +110,11 @@ export function SessionPanel({
               }`}
             >
               {session.totalDeclarado}{" "}
-              <span className="text-4xl text-gray-400">vs</span>{" "}
+              <span className="text-3xl sm:text-4xl text-gray-400">vs</span>{" "}
               {session.totalDetectado}
             </p>
             {session.hayExceso && (
-              <p className="mt-2 text-sm font-semibold text-red-600 uppercase">
+              <p className="mt-2 text-xs sm:text-sm font-semibold text-red-600 uppercase">
                 EXCESO DETECTADO
               </p>
             )}

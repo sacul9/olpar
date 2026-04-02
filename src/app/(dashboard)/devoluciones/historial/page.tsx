@@ -60,11 +60,11 @@ export default function HistorialPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
           Historial de Devoluciones
         </h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Input
             type="date"
             value={fecha}
@@ -89,8 +89,8 @@ export default function HistorialPage() {
             No hay sesiones para esta fecha.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="-mx-6 overflow-x-auto px-6">
+            <table className="w-full min-w-[650px] text-sm">
               <thead>
                 <tr className="border-b text-left text-gray-500">
                   <th className="pb-3 pr-4 font-medium">Hora</th>

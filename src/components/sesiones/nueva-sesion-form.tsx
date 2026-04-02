@@ -167,15 +167,15 @@ export function NuevaSesionForm({
           )}
         </div>
 
-        <div className="flex gap-2">
-          <div className="flex-1">
+        <div className="flex flex-wrap sm:flex-nowrap gap-2">
+          <div className="flex-1 min-w-[140px]">
             <Select
               options={motivoOptions}
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
             />
           </div>
-          <div className="w-24">
+          <div className="w-20 sm:w-24">
             <Input
               type="number"
               min={1}
